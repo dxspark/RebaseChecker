@@ -5,7 +5,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.Http;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -16,18 +15,14 @@ namespace DXS.RebaseChecker
     public static class PullRequestTrigger
     {
         [FunctionName("PullRequestTrigger")]
-        public static async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Function, "get", "post", Route = null)] HttpRequest req, ILogger log)
-        {                
+        public static async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Function, "post", Route = null)] HttpRequest req)
+        {
             string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
             dynamic data = JsonConvert.DeserializeObject(requestBody);
-
-            await PostStatusOnPullRequest(data.resourceContainers.project.baseUrl.ToString(),  data.resourceContainers.project.id.ToString(), data.resource.repository.id.ToString(), data.resource.targetRefName.ToString());
-
-            return new OkObjectResult("");
-        }
-
-        private static async Task PostStatusOnPullRequest(string baseUrl, string projectName, string repositoryName, string targetRefName)
-        {
+            string baseUrl = data.resourceContainers.project.baseUrl.ToString();
+            string projectName = data.resourceContainers.project.id.ToString();
+            string repositoryName = data.resource.repository.id.ToString();
+            string targetRefName = data.resource.targetRefName.ToString();
             string baseServiceUrl = string.Format("{0}{1}/_apis/git/repositories/{2}",
             baseUrl,
             projectName,
@@ -40,8 +35,7 @@ namespace DXS.RebaseChecker
                         ASCIIEncoding.ASCII.GetBytes(
                         string.Format("{0}:{1}", "", Environment.GetEnvironmentVariable("pat")))));
 
-                string truelastMergeTargetCommitId = await GetCommitIdFromRefNameAsync(baseServiceUrl, targetRefName, client);
-
+                string targetCommitId = await GetCommitIdFromRefNameAsync(baseServiceUrl, targetRefName, client);
                 dynamic pullRequests = await GetPullRequestByTargetRefNameAsync(baseServiceUrl, targetRefName, client);
 
                 if(pullRequests != null)
@@ -50,17 +44,14 @@ namespace DXS.RebaseChecker
                     {
                         int pullRequestId = (int)dataPullRequest.pullRequestId;
                         string sourceRefName = dataPullRequest.sourceRefName.ToString();
-
-                        string truelastMergeSourceCommitId = await GetCommitIdFromRefNameAsync(baseServiceUrl, sourceRefName, client);
-
-                        string behindCount = await GetBehindCountAsync(baseServiceUrl, truelastMergeSourceCommitId, truelastMergeTargetCommitId, client);
-                        
+                        string sourceCommitId = await GetCommitIdFromRefNameAsync(baseServiceUrl, sourceRefName, client);
+                        string behindCount = await GetBehindCountAsync(baseServiceUrl, sourceCommitId, targetCommitId, client);
                         string serializedStatus = ComputePullRequestStatus(behindCount);
-
                         await UpdatePullRequestStatusAsync(baseServiceUrl, pullRequestId, client, serializedStatus);
                     }
                 }
             }
+            return new OkObjectResult("");
         }
 
         private static async Task<dynamic> GetPullRequestByTargetRefNameAsync(string baseServiceUrl, string targetRefName, HttpClient httpClient)
@@ -95,8 +86,7 @@ namespace DXS.RebaseChecker
             string requestUrl = string.Format("{0}/diffs/commits?diffCommonCommit=false&baseVersionType=commit&baseVersion={1}&targetVersionType=commit&targetVersion={2}",
             baseServiceUrl,
             targetCommitId,
-            sourceCommitId
-            );
+            sourceCommitId);
             var responseMessage = await httpClient.GetAsync(requestUrl);
             var content = await responseMessage.Content.ReadAsStringAsync();
             dynamic data = JsonConvert.DeserializeObject(content);
