@@ -1,0 +1,9 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet",
+    "WEBSITE_TIME_ZONE": "GMT Standard Time",
+    "pat": "[Azure Devops Personal Access Token]"
+  }
+}
